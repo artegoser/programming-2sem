@@ -131,7 +131,7 @@ public:
 };
 
 // ============================================================
-//  Справочник сотрудников (простой вектор — только чтение)
+//  Справочник сотрудников
 // ============================================================
 
 class WorkerDB {
@@ -156,10 +156,37 @@ public:
         return true;
     }
 
+    bool saveToFile(const std::string& filename) const {
+        std::ofstream fout(filename);
+        if (!fout.is_open()) return false;
+        for (const auto& w : workers)
+            fout << w.code << "|" << w.fullName << "|"
+                 << w.position << "|" << w.phone << "\n";
+        return true;
+    }
+
     // Проверка: существует ли мастер с данным кодом
     bool workerExists(const std::string& code) const {
         for (const auto& w : workers)
             if (w.code == code) return true;
+        return false;
+    }
+
+    // Добавить мастера (false — код уже занят)
+    bool addWorker(const Worker& w) {
+        if (workerExists(w.code)) return false;
+        workers.push_back(w);
+        return true;
+    }
+
+    // Удалить мастера по коду (false — не найден)
+    bool removeByCode(const std::string& code) {
+        for (auto it = workers.begin(); it != workers.end(); ++it) {
+            if (it->code == code) {
+                workers.erase(it);
+                return true;
+            }
+        }
         return false;
     }
 
@@ -328,6 +355,39 @@ Order inputOrder(const DoublyList& list, const WorkerDB& wdb) {
 }
 
 // ============================================================
+//  Ввод мастера с клавиатуры (с валидацией)
+// ============================================================
+
+Worker inputWorker(const WorkerDB& wdb) {
+    Worker w;
+    while (true) {
+        w.code = inputLine("  Код мастера (напр. W006):   ");
+        if (w.code.empty()) { std::cout << "  Код не может быть пустым.\n"; continue; }
+        if (wdb.workerExists(w.code)) {
+            std::cout << "  [!] Мастер с кодом \"" << w.code << "\" уже существует!\n";
+            continue;
+        }
+        break;
+    }
+    while (true) {
+        w.fullName = inputLine("  ФИО:                        ");
+        if (!w.fullName.empty()) break;
+        std::cout << "  ФИО не может быть пустым.\n";
+    }
+    while (true) {
+        w.position = inputLine("  Должность:                  ");
+        if (!w.position.empty()) break;
+        std::cout << "  Должность не может быть пустой.\n";
+    }
+    while (true) {
+        w.phone = inputLine("  Телефон:                    ");
+        if (!w.phone.empty()) break;
+        std::cout << "  Телефон не может быть пустым.\n";
+    }
+    return w;
+}
+
+// ============================================================
 //  Справочная информация о мастере
 // ============================================================
 
@@ -360,6 +420,7 @@ void menu(DoublyList& list, WorkerDB& wdb) {
         std::cout << std::string(44, '=') << "\n";
         std::cout << "  СИСТЕМА УПРАВЛЕНИЯ ЗАКАЗАМИ (Вариант 12)\n";
         std::cout << std::string(44, '=') << "\n";
+        std::cout << "  --- Заказы ---\n";
         std::cout << "  1. Просмотр всех заказов\n";
         std::cout << "  2. Загрузить заказы из файла (" << ORDERS_FILE << ")\n";
         std::cout << "  3. Ввести заказ с клавиатуры\n";
@@ -367,8 +428,12 @@ void menu(DoublyList& list, WorkerDB& wdb) {
         std::cout << "  5. Поиск заказа по коду\n";
         std::cout << "  6. Сортировка по количеству изделий\n";
         std::cout << "  7. Сохранить заказы в файл (" << ORDERS_FILE << ")\n";
+        std::cout << "  --- Мастера ---\n";
         std::cout << "  8. Просмотр справочника сотрудников\n";
         std::cout << "  9. Справочная информация о мастере\n";
+        std::cout << " 10. Добавить мастера\n";
+        std::cout << " 11. Удалить мастера по коду\n";
+        std::cout << " 12. Сохранить справочник в файл (" << WORKERS_FILE << ")\n";
         std::cout << "  0. Выход\n";
         std::cout << std::string(44, '-') << "\n";
         std::cout << "  Выбор: ";
@@ -458,6 +523,41 @@ void menu(DoublyList& list, WorkerDB& wdb) {
             // --- Справка о мастере ---
             case 9:
                 workerInfo(wdb);
+                break;
+
+            // --- Добавить мастера ---
+            case 10: {
+                std::cout << "\n  === Добавление нового мастера ===\n";
+                Worker w = inputWorker(wdb);
+                wdb.addWorker(w);
+                std::cout << "  [OK] Мастер \"" << w.code << "\" (" << w.fullName << ") добавлен.\n";
+                break;
+            }
+
+            // --- Удалить мастера ---
+            case 11: {
+                std::string code = inputLine("\n  Введите код мастера для удаления: ");
+                // Предупреждение, если на мастера ссылаются заказы
+                int refs = 0;
+                for (Node* cur = list.head; cur; cur = cur->next)
+                    if (cur->data.workerCode == code) refs++;
+                if (refs > 0)
+                    std::cout << "  [!] Внимание: на этого мастера ссылаются "
+                              << refs << " заказ(ов).\n"
+                              << "      Мастер будет удалён, но заказы сохранят его код.\n";
+                if (wdb.removeByCode(code))
+                    std::cout << "  [OK] Мастер \"" << code << "\" удалён из справочника.\n";
+                else
+                    std::cout << "  [!] Мастер \"" << code << "\" не найден.\n";
+                break;
+            }
+
+            // --- Сохранить справочник ---
+            case 12:
+                if (wdb.saveToFile(WORKERS_FILE))
+                    std::cout << "  [OK] Справочник сохранён в \"" << WORKERS_FILE << "\".\n";
+                else
+                    std::cout << "  [!] Ошибка записи в файл.\n";
                 break;
 
             // --- Выход ---
